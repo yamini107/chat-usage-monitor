@@ -115,11 +115,16 @@ def load(file_bytes):
         else:
             df["CHANNEL"] = "Unknown"
 
-    df["CHANNEL"] = df["CHANNEL"].astype(str).str.strip()
+    df["CHANNEL"] = df["CHANNEL"].fillna("Unknown").astype(str).str.strip()
+    df.loc[df["CHANNEL"].eq("") | df["CHANNEL"].str.lower().eq("nan"), "CHANNEL"] = "Unknown"
 
-    # Normalize MERCHANT_ID to string to avoid mixed-type sort errors
-    # (e.g. some rows numeric, some rows string -> "'<' not supported between instances")
-    df["MERCHANT_ID"] = df["MERCHANT_ID"].astype(str).str.strip()
+    # Normalize MERCHANT_ID to string to avoid mixed-type sort errors.
+    # fillna() BEFORE astype(str) is required: on pandas' nullable "string"
+    # dtype, astype(str) alone leaves missing values as float NaN instead of
+    # the text "nan", which is what caused "'<' not supported between
+    # instances of 'str' and 'float'".
+    df["MERCHANT_ID"] = df["MERCHANT_ID"].fillna("Unknown").astype(str).str.strip()
+    df.loc[df["MERCHANT_ID"].eq("") | df["MERCHANT_ID"].str.lower().eq("nan"), "MERCHANT_ID"] = "Unknown"
 
     return df
 
