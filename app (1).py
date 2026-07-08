@@ -116,6 +116,11 @@ def load(file_bytes):
             df["CHANNEL"] = "Unknown"
 
     df["CHANNEL"] = df["CHANNEL"].astype(str).str.strip()
+
+    # Normalize MERCHANT_ID to string to avoid mixed-type sort errors
+    # (e.g. some rows numeric, some rows string -> "'<' not supported between instances")
+    df["MERCHANT_ID"] = df["MERCHANT_ID"].astype(str).str.strip()
+
     return df
 
 df_raw = load(uploaded.read())
