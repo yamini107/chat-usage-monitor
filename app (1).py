@@ -36,7 +36,7 @@ with st.sidebar:
     uploaded = st.file_uploader(
         "Upload TC Usage CSV",
         type=["csv"],
-        help="CSV with columns: MERCHANT_ID, DATE, BUYER_MESSAGE_COUNT, MP_REPLY_COUNT, TC_REPLY_COUNT, TOTAL_SELLER_REPLY_COUNT, TC_REPLY_PCT"
+        help="CSV with columns: MERCHANT_ID, LOG_DATE, BUYER_MESSAGE_COUNT, MP_REPLY_COUNT, TC_REPLY_COUNT, TOTAL_SELLER_REPLY_COUNT, TC_REPLY_PCT"
     )
     st.markdown("---")
     st.markdown("### ⚙️ Slack")
@@ -59,7 +59,7 @@ if not uploaded:
 | Column | Description |
 |---|---|
 | `MERCHANT_ID` | Store / merchant code |
-| `DATE` | Date (YYYY-MM-DD) |
+| `LOG_DATE` | Date (YYYY-MM-DD) |
 | `BUYER_MESSAGE_COUNT` | Inbound buyer messages |
 | `MP_REPLY_COUNT` | Replies sent directly from marketplace |
 | `TC_REPLY_COUNT` | Replies sent via TC (The Chattr) |
@@ -75,6 +75,13 @@ if not uploaded:
 def load(file_bytes):
     df = pd.read_csv(io.BytesIO(file_bytes))
     df.columns = df.columns.str.strip().str.upper()
+
+    # Accept either LOG_DATE or DATE as the date column, normalize to DATE
+    if "LOG_DATE" in df.columns and "DATE" not in df.columns:
+        df = df.rename(columns={"LOG_DATE": "DATE"})
+    elif "LOG_DATE" in df.columns and "DATE" in df.columns:
+        # Both present — prefer LOG_DATE, drop the other to avoid ambiguity
+        df = df.drop(columns=["DATE"]).rename(columns={"LOG_DATE": "DATE"})
 
     # Only these are truly required
     required = {"MERCHANT_ID","DATE","BUYER_MESSAGE_COUNT","MP_REPLY_COUNT","TC_REPLY_COUNT"}
