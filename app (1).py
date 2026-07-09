@@ -386,11 +386,22 @@ top_merchants = merch.nlargest(8, "tc_replies")["MERCHANT_ID"].tolist()
 trend_df = df[df["MERCHANT_ID"].isin(top_merchants)].copy()
 trend_df["DATE_ONLY"] = pd.to_datetime(trend_df["DATE_ONLY"])
 
+# Aggregate to one row per merchant per day before charting, so multiple raw
+# log rows for the same merchant/day don't produce overlapping/duplicate points.
+trend_daily = trend_df.groupby(["MERCHANT_ID","DATE_ONLY"]).agg(
+    TC_REPLY_COUNT=("TC_REPLY_COUNT","sum"),
+    MP_REPLY_COUNT=("MP_REPLY_COUNT","sum"),
+).reset_index()
+trend_daily["TC_REPLY_PCT"] = (
+    trend_daily["TC_REPLY_COUNT"] /
+    (trend_daily["TC_REPLY_COUNT"] + trend_daily["MP_REPLY_COUNT"]).replace(0,1) * 100
+).round(1)
+
 col_t1, col_t2 = st.columns([2, 1])
 
 with col_t1:
     st.altair_chart(
-        alt.Chart(trend_df).mark_line(point=alt.OverlayMarkDef(size=40))
+        alt.Chart(trend_daily).mark_line(point=alt.OverlayMarkDef(size=40))
         .encode(
             x=alt.X("DATE_ONLY:T", title="Date", axis=alt.Axis(labelAngle=-35, labelColor="#ccc", titleColor="#ccc")),
             y=alt.Y("TC_REPLY_PCT:Q", title="TC Reply %",
@@ -430,10 +441,25 @@ disp = merch.copy()
 disp.columns = ["Merchant","Buyer Messages","TC Replies","MP Replies","Total Replies","TC %","Reply Rate %"]
 st.dataframe(disp, use_container_width=True, hide_index=True)
 
+# FIX: previously this table selected raw rows straight from the filtered
+# dataframe and only sorted them, so if the source CSV had more than one row
+# for the same MERCHANT_ID on the same LOG_DATE (e.g. multiple log entries
+# timestamped within the same day), every raw row showed up as its own line
+# in the table — appearing as "duplicates" for the same date/merchant.
+# Now we explicitly aggregate (sum) by DATE_ONLY + MERCHANT_ID first, so each
+# merchant appears exactly once per day, with TC_REPLY_PCT recomputed off the
+# summed totals.
 st.markdown(f'<div class="section-title">📋 Daily Detail — {date_from} → {date_to}</div>', unsafe_allow_html=True)
-daily_detail = df[["DATE_ONLY","MERCHANT_ID","BUYER_MESSAGE_COUNT","TC_REPLY_COUNT",
-                    "MP_REPLY_COUNT","TOTAL_SELLER_REPLY_COUNT","TC_REPLY_PCT"]].sort_values(
-    ["DATE_ONLY","MERCHANT_ID"], ascending=[False,True])
+daily_detail = df.groupby(["DATE_ONLY","MERCHANT_ID"]).agg(
+    BUYER_MESSAGE_COUNT=("BUYER_MESSAGE_COUNT","sum"),
+    TC_REPLY_COUNT=("TC_REPLY_COUNT","sum"),
+    MP_REPLY_COUNT=("MP_REPLY_COUNT","sum"),
+    TOTAL_SELLER_REPLY_COUNT=("TOTAL_SELLER_REPLY_COUNT","sum"),
+).reset_index()
+daily_detail["TC_REPLY_PCT"] = (
+    daily_detail["TC_REPLY_COUNT"] / daily_detail["TOTAL_SELLER_REPLY_COUNT"].replace(0,1) * 100
+).round(1)
+daily_detail = daily_detail.sort_values(["DATE_ONLY","MERCHANT_ID"], ascending=[False,True])
 daily_detail.columns = ["Date","Merchant","Buyer Msgs","TC Replies","MP Replies","Total Replies","TC%"]
 st.dataframe(daily_detail, use_container_width=True, height=300, hide_index=True)
 
@@ -447,7 +473,7 @@ with d1:
                        merch.to_csv(index=False).encode(), "merchant_summary.csv", "text/csv")
 with d2:
     st.download_button("⬇️ Daily Detail CSV",
-                       df.to_csv(index=False).encode(), "daily_detail.csv", "text/csv")
+                       daily_detail.to_csv(index=False).encode(), "daily_detail.csv", "text/csv")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SLACK
