@@ -27,6 +27,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Merchant ID values that are known data-entry junk (chat text captured as a
+# merchant id) rather than real seller identifiers. These are excluded from
+# the Merchant filter dropdown options.
+INVALID_MERCHANT_VALUES = {
+    "follow up",
+    "get back to you",
+    "check with team",
+    "let me verify",
+    "will check",
+    "unknown",
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -148,9 +160,14 @@ with st.sidebar:
                                    help="Filter by Lazada, Shopee, TikTok etc.")
 
     st.markdown("### 🏪 Merchant")
-    # Merchant list updates based on channel selection
+    # Merchant list updates based on channel selection. Known junk values
+    # (chat text mistakenly captured as a merchant id, plus "Unknown") are
+    # excluded so they never show up as selectable sellers.
     merch_pool = df_raw[df_raw["CHANNEL"].isin(sel_channels)] if sel_channels else df_raw
-    merchants = sorted(merch_pool["MERCHANT_ID"].unique())
+    merchants = sorted(
+        m for m in merch_pool["MERCHANT_ID"].unique()
+        if m.strip().lower() not in INVALID_MERCHANT_VALUES
+    )
     sel_merchants = st.multiselect("Merchant ID", merchants, placeholder="All merchants")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -198,8 +215,16 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-title">📈 TC Adoption Trend — Month on Month</div>', unsafe_allow_html=True)
 
-# Always use full unfiltered data for the MoM trend (so Feb-Jun always visible)
-monthly_raw = df_raw.copy()
+# Use the sidebar-filtered data (Date Range = "Adoption Month" filter,
+# Channel + Merchant = "Seller" filter) so this section — both the trend
+# chart and the per-seller table below — always matches the active filters.
+# "Unknown" sellers are excluded, since they represent missing merchant data
+# rather than a real seller.
+monthly_raw = df.copy()
+monthly_raw = monthly_raw[monthly_raw["MERCHANT_ID"].str.strip().str.lower() != "unknown"]
+if monthly_raw.empty:
+    st.caption("ℹ️ No seller adoption data for the selected Seller/Month filters.")
+
 monthly_raw["MONTH"] = pd.to_datetime(monthly_raw["DATE_ONLY"]).dt.to_period("M")
 monthly_agg = monthly_raw.groupby("MONTH").agg(
     tc=("TC_REPLY_COUNT","sum"),
@@ -209,7 +234,8 @@ monthly_agg["tc_pct"] = (monthly_agg["tc"] / monthly_agg["total"].replace(0,1) *
 monthly_agg["month_label"] = monthly_agg["MONTH"].dt.strftime("%b %Y")
 monthly_agg["MONTH_DT"] = monthly_agg["MONTH"].dt.to_timestamp()
 
-# Per-merchant monthly table
+# Per-merchant monthly table — same filtered, Unknown-excluded source as the
+# chart above, so the table always matches what's plotted.
 merch_monthly = monthly_raw.groupby(["MERCHANT_ID","MONTH"]).agg(
     tc=("TC_REPLY_COUNT","sum"),
     total=("TOTAL_SELLER_REPLY_COUNT","sum")
